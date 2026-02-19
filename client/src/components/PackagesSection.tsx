@@ -357,32 +357,85 @@ Please confirm my booking and provide payment instructions.`;
         </p>
       </div>
 
-      <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
+      <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
         <DialogContent className="sm:max-w-md bg-white text-slate-900">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
               <CreditCard className="h-5 w-5 text-blue-600" />
-              Secure Payment
+              {selectedPackage?.id ? "Secure Payment Details" : "Book Custom Plan"}
             </DialogTitle>
             <DialogDescription>
               {selectedPackage && (
                 <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="font-semibold text-slate-900">{selectedPackage.name}</p>
                   <p className="text-lg font-bold text-blue-600 mt-1">{selectedPackage.price}</p>
-                  <p className="text-sm text-slate-600 mt-2">Proceed comfortably with Razorpay.</p>
+                  <p className="text-sm text-slate-600 mt-2">
+                    {selectedPackage.id
+                      ? "Enter details & coupon to proceed to payment."
+                      : "Fill your details to proceed with booking via email."}
+                  </p>
                 </div>
               )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex justify-center flex-col items-center pt-2 pb-6 min-h-[150px]">
-            {selectedPackage && selectedPackage.id ? (
-              <RazorpayButton paymentButtonId={selectedPackage.id} />
-            ) : (
-              <p className="text-red-500">Payment button configuration missing for this plan.</p>
-            )}
-            <p className="text-xs text-slate-500 mt-4">Safe & Secure Payment Gateway</p>
-          </div>
+          <form onSubmit={handleBookingSubmit} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-sm font-medium text-slate-700">Name</label>
+              <input
+                id="name"
+                required
+                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={bookingForm.name}
+                onChange={(e) => setBookingForm({ ...bookingForm, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-slate-700">Email</label>
+              <input
+                id="email"
+                type="email"
+                required
+                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={bookingForm.email}
+                onChange={(e) => setBookingForm({ ...bookingForm, email: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="phone" className="text-sm font-medium text-slate-700">Phone</label>
+              <input
+                id="phone"
+                type="tel"
+                required
+                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={bookingForm.phone}
+                onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="coupon" className="text-sm font-medium text-slate-700">Coupon Code (Optional)</label>
+              <input
+                id="coupon"
+                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                value={bookingForm.coupon}
+                onChange={(e) => setBookingForm({ ...bookingForm, coupon: e.target.value })}
+                placeholder="PROMO2024"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="message" className="text-sm font-medium text-slate-700">Additional Message (Optional)</label>
+              <textarea
+                id="message"
+                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent h-24"
+                value={bookingForm.message}
+                onChange={(e) => setBookingForm({ ...bookingForm, message: e.target.value })}
+              />
+            </div>
+
+            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold" disabled={isProcessing}>
+              {isProcessing ? "Processing..." : (selectedPackage?.id ? "Proceed to Payment" : "Send Booking Request")}
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
     </section>
