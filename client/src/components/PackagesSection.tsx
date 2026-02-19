@@ -226,7 +226,6 @@ Please confirm my booking and provide payment instructions.`;
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-900 border-b border-slate-800">
-                  <th className="p-4 text-slate-300 font-bold uppercase text-sm">Plan ID</th>
                   <th className="p-4 text-slate-300 font-bold uppercase text-sm">Title</th>
                   <th className="p-4 text-slate-300 font-bold uppercase text-sm w-32">Price</th>
                   <th className="p-4 text-slate-300 font-bold uppercase text-sm">Description</th>
@@ -236,7 +235,6 @@ Please confirm my booking and provide payment instructions.`;
               <tbody className="bg-slate-900/50 divide-y divide-slate-800">
                 {customPackages.map((pkg: any) => (
                   <tr key={pkg.planId} className="hover:bg-slate-800/50 transition-colors">
-                    <td className="p-4 text-slate-400 font-mono text-xs">{pkg.planId}</td>
                     <td className="p-4 text-white font-bold">{pkg.planName}</td>
                     <td className="p-4 text-blue-400 font-bold whitespace-nowrap">{pkg.price}</td>
                     <td className="p-4 text-slate-400 text-sm">{pkg.description}</td>

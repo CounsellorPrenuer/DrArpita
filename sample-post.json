@@ -1,0 +1,29 @@
+{
+    "_type": "post",
+    "title": "Unlocking Your Career Potential: A Guide for 2024",
+    "slug": {
+        "_type": "slug",
+        "current": "unlocking-career-potential-2024"
+    },
+    "publishedAt": "2024-02-20T10:00:00Z",
+    "body": [
+        {
+            "_type": "block",
+            "children": [
+                {
+                    "_type": "span",
+                    "text": "In today’s rapidly evolving job market, understanding your core strengths is more important than ever. Whether you are a student choosing a stream or a professional looking for a pivot, career clarity is the key to success."
+                }
+            ]
+        },
+        {
+            "_type": "block",
+            "children": [
+                {
+                    "_type": "span",
+                    "text": "At Dr. Arpita's Career Clinic, we believe that every individual has a unique path. Through psychometric testing and personalized counseling, we help you discover that path."
+                }
+            ]
+        }
+    ]
+}
