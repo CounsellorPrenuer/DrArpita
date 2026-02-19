@@ -55,60 +55,38 @@ export default function PackagesSection() {
     if (!selectedPackage) return;
 
     if (selectedPackage.id) {
-      // Standard Package -> Razorpay Payment Flow via Worker
+      // Standard Package -> Razorpay Payment Link (Full Branded Checkout)
       setIsProcessing(true);
       try {
         const priceInPaise = parseInt(selectedPackage.price.replace(/[^0-9]/g, "")) * 100;
 
-        // Worker URL - updated with user provided subdomain
-        const res = await fetch("https://dr-arpita-payments.garyphadale.workers.dev/api/create-order", {
+        const res = await fetch("https://dr-arpita-payments.garyphadale.workers.dev/api/create-payment-link", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: priceInPaise,
             currency: "INR",
-            receipt: `order_${Date.now()}`,
-            couponCode: bookingForm.coupon
+            packageName: selectedPackage.name,
+            customerName: bookingForm.name,
+            customerEmail: bookingForm.email,
+            customerPhone: bookingForm.phone,
+            couponCode: bookingForm.coupon,
+            callbackUrl: window.location.origin + window.location.pathname
           })
         });
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || "Failed to create order");
+          throw new Error((errData as any).error || "Failed to create payment link");
         }
-        const orderData = await res.json();
+        const linkData = await res.json() as any;
 
-        const options = {
-          key: orderData.key_id,
-          amount: orderData.amount,
-          currency: orderData.currency,
-          name: "Dr. Arpita",
-          description: selectedPackage.name,
-          order_id: orderData.id,
-          handler: function (response: any) {
-            toast({
-              title: "Payment Successful",
-              description: `Payment ID: ${response.razorpay_payment_id}`,
-            });
-            setIsBookingModalOpen(false);
-            setBookingForm({ name: "", email: "", phone: "", message: "", coupon: "" });
-          },
-          prefill: {
-            name: bookingForm.name,
-            email: bookingForm.email,
-            contact: bookingForm.phone
-          },
-          notes: {
-            plan: selectedPackage.name,
-            coupon: bookingForm.coupon
-          },
-          theme: {
-            color: "#3b82f6"
-          }
-        };
-
-        const rzp = new (window as any).Razorpay(options);
-        rzp.open();
+        // Redirect to full Razorpay branded checkout page
+        if (linkData.short_url) {
+          window.location.href = linkData.short_url;
+        } else {
+          throw new Error("No payment URL received");
+        }
 
       } catch (err: any) {
         console.error(err);
