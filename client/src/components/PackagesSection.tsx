@@ -60,8 +60,8 @@ export default function PackagesSection() {
       try {
         const priceInPaise = parseInt(selectedPackage.price.replace(/[^0-9]/g, "")) * 100;
 
-        // Worker URL - update subdomain if needed
-        const res = await fetch("https://dr-arpita-payments.royjohnson.workers.dev/api/create-order", {
+        // Worker URL - updated with user provided subdomain
+        const res = await fetch("https://dr-arpita-payments.garyphadale.workers.dev/api/create-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
