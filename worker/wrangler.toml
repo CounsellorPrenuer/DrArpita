@@ -1,0 +1,12 @@
+
+name = "dr-arpita-payments"
+main = "src/index.ts"
+compatibility_date = "2024-02-19"
+
+[vars]
+# Placeholder for local dev, actual secrets set via `wrangler secret put`
+# But user provided them, so we can set them as vars for immediate deployment if needed, 
+# though secrets are better. For simplicity of "fill info then apply params", vars work.
+RAZORPAY_KEY_ID = "rzp_live_ZDRBsLXKmZI6Gu"
+RAZORPAY_KEY_SECRET = "ICeztAUq6hLeCxBgNzIU1awy"
+RAZORPAY_WEBHOOK_SECRET = "MLGT3me@a2v9_@e"

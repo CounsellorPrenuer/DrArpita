@@ -36,27 +36,27 @@ export default function ContactSection() {
     return () => observer.disconnect();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    try {
-      await apiRequest("POST", "/api/contact", formData);
-      
-      toast({
-        title: "Thank you for reaching out!",
-        description: "I'll get back to you within 24 hours.",
-      });
-      setFormData({ name: "", email: "", phone: "", message: "" });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to send message. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+    const subject = encodeURIComponent(`New Contact Request from ${formData.name}`);
+    const bodyText = `Name: ${formData.name}
+Email: ${formData.email}
+Phone: ${formData.phone}
+Message: ${formData.message}`;
+
+    const body = encodeURIComponent(bodyText);
+
+    window.location.href = `mailto:info@skillzy.in?subject=${subject}&body=${body}`;
+
+    toast({
+      title: "Opening Email Client",
+      description: "Please send the email from your preferred mail app.",
+    });
+
+    setIsSubmitting(false);
+    setFormData({ name: "", email: "", phone: "", message: "" });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -79,14 +79,14 @@ export default function ContactSection() {
   return (
     <section id="contact" className="py-24 md:py-32 bg-gradient-to-b from-slate-950 to-slate-900 relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_600px_at_50%_-100px,#3b82f640,transparent)]" />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className={`text-center mb-20 transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <div className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-blue-500/20 to-violet-500/20 rounded-full border border-blue-500/30 backdrop-blur-xl mb-8">
             <Send className="h-5 w-5 text-blue-400" />
             <span className="text-sm font-bold text-blue-300">Get In Touch</span>
           </div>
-          
+
           <h2 className="font-heading font-black text-5xl md:text-6xl lg:text-7xl mb-6 text-white" data-testid="text-contact-title">
             Let's <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-pink-400 bg-clip-text text-transparent">Connect</span>
           </h2>

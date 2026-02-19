@@ -31,16 +31,16 @@ export default function Navbar() {
     { name: "Programs", id: "programs" },
     { name: "Pricing", id: "pricing" },
     { name: "Awards", id: "awards" },
+    { name: "Blog", id: "blog" },
     { name: "Contact", id: "contact" },
   ];
 
   return (
     <nav
-      className={`sticky top-0 z-50 transition-all duration-500 bg-black ${
-        isScrolled
-          ? "border-b border-blue-500/20 shadow-2xl shadow-blue-500/10"
-          : ""
-      }`}
+      className={`sticky top-0 z-50 transition-all duration-500 bg-black ${isScrolled
+        ? "border-b border-blue-500/20 shadow-2xl shadow-blue-500/10"
+        : ""
+        }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
@@ -58,7 +58,18 @@ export default function Navbar() {
             {navLinks.map((link) => (
               <button
                 key={link.id}
-                onClick={() => scrollToSection(link.id)}
+                onClick={() => {
+                  if (link.id === 'blog') {
+                    window.location.hash = '/blog';
+                  } else {
+                    if (window.location.hash !== '' && window.location.hash !== '#/' && window.location.hash !== '#') {
+                      window.location.hash = '/';
+                      setTimeout(() => scrollToSection(link.id), 100);
+                    } else {
+                      scrollToSection(link.id);
+                    }
+                  }
+                }}
                 className="text-slate-300 hover:text-white transition-all duration-300 font-bold relative group text-base"
                 data-testid={`link-${link.id}`}
               >
@@ -92,7 +103,19 @@ export default function Navbar() {
             {navLinks.map((link) => (
               <button
                 key={link.id}
-                onClick={() => scrollToSection(link.id)}
+                onClick={() => {
+                  if (link.id === 'blog') {
+                    window.location.hash = '/blog';
+                  } else {
+                    if (window.location.hash !== '' && window.location.hash !== '#/' && window.location.hash !== '#') {
+                      window.location.hash = '/';
+                      setTimeout(() => scrollToSection(link.id), 100);
+                    } else {
+                      scrollToSection(link.id);
+                    }
+                  }
+                  setIsMobileMenuOpen(false);
+                }}
                 className="block w-full text-left py-4 px-6 text-slate-300 hover:text-white hover:bg-blue-500/10 rounded-xl transition-all duration-300 font-bold border border-transparent hover:border-blue-500/20"
                 data-testid={`link-mobile-${link.id}`}
               >
@@ -113,10 +136,10 @@ export default function Navbar() {
           </div>
         </div>
       )}
-      
-      <FreeCallModal 
-        open={isFreeCallModalOpen} 
-        onOpenChange={setIsFreeCallModalOpen} 
+
+      <FreeCallModal
+        open={isFreeCallModalOpen}
+        onOpenChange={setIsFreeCallModalOpen}
       />
     </nav>
   );

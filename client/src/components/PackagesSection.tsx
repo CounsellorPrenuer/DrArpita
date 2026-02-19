@@ -1,13 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Check, X, Sparkles, Zap, Crown, ShoppingCart } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { Check, X, Sparkles, Zap, Crown, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { sanityClient } from "@/lib/sanity";
 
 type TabKey = "8-9" | "10-12" | "college" | "working";
 
@@ -21,20 +20,134 @@ interface Package {
   price: string;
   features: Feature[];
   isPopular?: boolean;
+  razorpayId: string;
 }
+
+// RazorpayButton removed in favor of Standard Checkout via Worker
+
+
+
 
 export default function PackagesSection() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<TabKey>("8-9");
+  const [activeTab, setActiveTab] = useState<string>("8-9 Students");
   const [isVisible, setIsVisible] = useState(false);
+
+  // Unified State
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<{ name: string; price: string; type: string } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [bookingForm, setBookingForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-  });
+  const [bookingForm, setBookingForm] = useState({ name: "", email: "", phone: "", message: "", coupon: "" });
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedPackage, setSelectedPackage] = useState<{ name: string; price: string; id: string } | null>(null);
+
+  // Load Razorpay Script
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  const handleBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPackage) return;
+
+    if (selectedPackage.id) {
+      // Standard Package -> Razorpay Payment Flow via Worker
+      setIsProcessing(true);
+      try {
+        const priceInPaise = parseInt(selectedPackage.price.replace(/[^0-9]/g, "")) * 100;
+
+        // Worker URL - update subdomain if needed
+        const res = await fetch("https://dr-arpita-payments.royjohnson.workers.dev/api/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: priceInPaise,
+            currency: "INR",
+            receipt: `order_${Date.now()}`,
+            couponCode: bookingForm.coupon
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to create order");
+        }
+        const orderData = await res.json();
+
+        const options = {
+          key: orderData.key_id,
+          amount: orderData.amount,
+          currency: orderData.currency,
+          name: "Dr. Arpita",
+          description: selectedPackage.name,
+          order_id: orderData.id,
+          handler: function (response: any) {
+            toast({
+              title: "Payment Successful",
+              description: `Payment ID: ${response.razorpay_payment_id}`,
+            });
+            setIsBookingModalOpen(false);
+            setBookingForm({ name: "", email: "", phone: "", message: "", coupon: "" });
+          },
+          prefill: {
+            name: bookingForm.name,
+            email: bookingForm.email,
+            contact: bookingForm.phone
+          },
+          notes: {
+            plan: selectedPackage.name,
+            coupon: bookingForm.coupon
+          },
+          theme: {
+            color: "#3b82f6"
+          }
+        };
+
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+
+      } catch (err: any) {
+        console.error(err);
+        toast({
+          variant: "destructive",
+          title: "Payment Initialization Failed",
+          description: err.message || "Could not start payment. Please try again."
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+
+    } else {
+      // Custom Package -> Mailto Flow
+      const subject = encodeURIComponent(`Booking Request: ${selectedPackage.name}`);
+      const bodyText = `Package: ${selectedPackage.name}
+Price: ${selectedPackage.price}
+
+Name: ${bookingForm.name}
+Email: ${bookingForm.email}
+Phone: ${bookingForm.phone}
+Coupon Code: ${bookingForm.coupon || "N/A"}
+Message: ${bookingForm.message}
+
+Please confirm my booking and provide payment instructions.`;
+
+      const body = encodeURIComponent(bodyText);
+
+      window.location.href = `mailto:royjohnson@careerplans.pro?subject=${subject}&body=${body}`;
+
+      toast({
+        title: "Opening Email Client",
+        description: "Please complete your booking in your email app.",
+      });
+
+      setIsBookingModalOpen(false);
+      setBookingForm({ name: "", email: "", phone: "", message: "", coupon: "" });
+    }
+  };
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -54,191 +167,102 @@ export default function PackagesSection() {
     return () => observer.disconnect();
   }, []);
 
+  const { data: packages, isLoading } = useQuery({
+    queryKey: ["packages"],
+    queryFn: async () => {
+      const result = await sanityClient.fetch(`
+        *[_type == "package"] | order(order asc) {
+          planName,
+          price,
+          category,
+          features,
+          isPopular,
+          razorpayId,
+          isCustom,
+          description,
+          planId
+        }
+      `);
+      return result;
+    }
+  });
+
+  const standardPackages = packages?.filter((p: any) => !p.isCustom) || [];
+  const customPackages = packages?.filter((p: any) => p.isCustom) || [];
+
   const tabs = [
-    { key: "8-9" as TabKey, label: "8TH-9TH GRADE STUDENTS", gradient: "from-blue-500 to-cyan-500" },
-    { key: "10-12" as TabKey, label: "10TH-12TH GRADE STUDENTS", gradient: "from-emerald-500 to-teal-500" },
-    { key: "college" as TabKey, label: "COLLEGE GRADUATES", gradient: "from-violet-500 to-purple-500" },
-    { key: "working" as TabKey, label: "WORKING PROFESSIONALS", gradient: "from-orange-500 to-amber-500" },
+    { key: "8-9 Students", label: "8-9 Students", gradient: "from-blue-500 to-cyan-500" },
+    { key: "10-12 Students", label: "10-12 Students", gradient: "from-emerald-500 to-teal-500" },
+    { key: "Graduates", label: "Graduates", gradient: "from-violet-500 to-purple-500" },
+    { key: "Working Professionals", label: "Working Professionals", gradient: "from-orange-500 to-amber-500" },
   ];
 
-  const packagesData: Record<TabKey, Package[]> = {
-    "8-9": [
-      {
-        planName: "Discover",
-        price: "₹ 5,500",
-        features: [
-          { text: "Psychometric assessment to measure your interests", included: true },
-          { text: "1 career counselling session with Mentoria's expert career coaches", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Invites to live webinars by industry experts", included: true },
-          { text: "Customized reports after each session with education pathways", included: false },
-          { text: "Guidance on studying abroad", included: false },
-          { text: "CV building during internship/graduation", included: false },
-        ],
-      },
-      {
-        planName: "Discover plus+",
-        price: "₹ 15,000",
-        features: [
-          { text: "Psychometric assessments to measure your interests, personality and abilities", included: true },
-          { text: "8 career counselling sessions (1 every year) with Mentoria's expert career coaches until graduation", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Invites to live webinars by industry experts", included: true },
-          { text: "Customized reports after each session with education pathways", included: true },
-          { text: "Guidance on studying abroad", included: true },
-          { text: "CV building during internship/graduation", included: true },
-        ],
-        isPopular: true,
-      },
-    ],
-    "10-12": [
-      {
-        planName: "Achieve Online",
-        price: "₹ 5,999",
-        features: [
-          { text: "Psychometric assessment to measure your interests, personality and abilities", included: true },
-          { text: "1 career counselling session", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Pre-recorded webinars by industry experts", included: true },
-          { text: "Customized reports after each session with education pathways", included: false },
-          { text: "Guidance on studying abroad", included: false },
-          { text: "CV reviews during internship/graduation", included: false },
-        ],
-      },
-      {
-        planName: "Achieve Plus+",
-        price: "₹ 10,599",
-        features: [
-          { text: "Psychometric assessment to measure your interests, personality and abilities", included: true },
-          { text: "4 career counselling sessions", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Attend live webinars by industry experts", included: true },
-          { text: "Customized reports after each session with education pathways", included: true },
-          { text: "Guidance on studying abroad", included: true },
-          { text: "CV reviews during internship/graduation", included: true },
-        ],
-        isPopular: true,
-      },
-    ],
-    "college": [
-      {
-        planName: "Ascend Online",
-        price: "₹ 6,499",
-        features: [
-          { text: "Psychometric assessment to measure your interests, personality and abilities", included: true },
-          { text: "1 career counselling session", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Pre-recorded webinars by industry experts", included: true },
-          { text: "Customized reports after each session with information on certificate/online courses", included: false },
-          { text: "Guidance on studying abroad", included: false },
-          { text: "CV reviews for job application", included: false },
-        ],
-      },
-      {
-        planName: "Ascend Plus+",
-        price: "₹ 10,599",
-        features: [
-          { text: "Psychometric assessment to measure your interests, personality and abilities", included: true },
-          { text: "3 career counselling sessions", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Attend live webinars by industry experts", included: true },
-          { text: "Customized reports after each session with information on certificate/online courses", included: true },
-          { text: "Guidance on studying abroad", included: true },
-          { text: "CV reviews for job application", included: true },
-        ],
-        isPopular: true,
-      },
-    ],
-    "working": [
-      {
-        planName: "Ascend Online",
-        price: "₹ 6,499",
-        features: [
-          { text: "Psychometric assessment to measure your interests, personality and abilities", included: true },
-          { text: "1 career counselling session", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Pre-recorded webinars by industry experts", included: true },
-          { text: "Customized reports after each session with information on certificate/online courses", included: false },
-          { text: "Guidance on studying abroad", included: false },
-          { text: "CV reviews for job application", included: false },
-        ],
-      },
-      {
-        planName: "Ascend Plus+",
-        price: "₹ 10,599",
-        features: [
-          { text: "Psychometric assessment to measure your interests, personality and abilities", included: true },
-          { text: "2 career counselling sessions", included: true },
-          { text: "Lifetime access to Knowledge Gateway", included: true },
-          { text: "Attend live webinars by industry experts", included: true },
-          { text: "Customized reports after each session with information on certificate/online courses", included: true },
-          { text: "Guidance on studying abroad", included: true },
-          { text: "CV reviews for job application", included: true },
-        ],
-        isPopular: true,
-      },
-    ],
-  };
-
-  const currentPackages = packagesData[activeTab];
+  const currentPackages = standardPackages.filter((p: any) => p.category === activeTab);
   const currentGradient = tabs.find(t => t.key === activeTab)?.gradient || "from-blue-500 to-cyan-500";
 
-  const handleEnrollClick = (planName: string, price: string) => {
-    const packageType = tabs.find(t => t.key === activeTab)?.label || activeTab;
-    setSelectedPackage({ name: planName, price, type: packageType });
+  const handleEnrollClick = (planName: string, price: string, razorpayId: string = "") => {
+    // Both flows now open the modal first to collect info
+    setSelectedPackage({ name: planName, price, id: razorpayId });
     setIsBookingModalOpen(true);
   };
 
-  const handleBookingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPackage) return;
-
-    setIsSubmitting(true);
-    try {
-      await apiRequest("POST", "/api/bookings", {
-        name: bookingForm.name,
-        email: bookingForm.email,
-        phone: bookingForm.phone,
-        packageType: selectedPackage.type,
-        packageName: selectedPackage.name,
-        price: selectedPackage.price,
-      });
-
-      toast({
-        title: "Booking Submitted!",
-        description: "Thank you for your interest. We'll contact you shortly.",
-      });
-
-      setBookingForm({ name: "", email: "", phone: "" });
-      setIsBookingModalOpen(false);
-      setSelectedPackage(null);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to submit booking. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
-    <section id="pricing" className="py-24 md:py-32 bg-gradient-to-b from-slate-900 to-slate-950 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_600px_at_50%_300px,#3b82f640,transparent)]" />
-      
+    <section id="pricing" className="py-24 md:py-32 bg-slate-950 relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_600px_at_50%_300px,#3b82f610,transparent)]" />
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+
+        {/* Helper Function to render header */}
         <div className={`text-center mb-16 transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          <div className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-blue-500/20 to-violet-500/20 rounded-full border border-blue-500/30 backdrop-blur-xl mb-8">
-            <Zap className="h-5 w-5 text-blue-400" />
-            <span className="text-sm font-bold text-blue-300">Flexible Pricing Plans</span>
-          </div>
-          
-          <h2 className="font-heading font-black text-5xl md:text-6xl lg:text-7xl mb-6 text-white" data-testid="text-packages-title">
-            Choose Your <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-pink-400 bg-clip-text text-transparent">Path</span>
+          <h2 className="font-heading font-black text-4xl md:text-5xl mb-6 text-white" data-testid="text-custom-title">
+            Want To <span className="text-blue-500">Customise</span> Your Mentorship Plan?
           </h2>
-          <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mx-auto font-medium">
-            Tailored career guidance packages for every stage of your journey
+          <p className="text-xl text-slate-400 max-w-4xl mx-auto font-medium mb-12">
+            If you want to subscribe to specific services from Mentoria that resolve your career challenges, you can choose one or more of the following:
+          </p>
+
+          {/* Custom Packages Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800 shadow-2xl mb-24">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-900 border-b border-slate-800">
+                  <th className="p-4 text-slate-300 font-bold uppercase text-sm">Plan ID</th>
+                  <th className="p-4 text-slate-300 font-bold uppercase text-sm">Title</th>
+                  <th className="p-4 text-slate-300 font-bold uppercase text-sm w-32">Price</th>
+                  <th className="p-4 text-slate-300 font-bold uppercase text-sm">Description</th>
+                  <th className="p-4 text-slate-300 font-bold uppercase text-sm">Action</th>
+                </tr>
+              </thead>
+              <tbody className="bg-slate-900/50 divide-y divide-slate-800">
+                {customPackages.map((pkg: any) => (
+                  <tr key={pkg.planId} className="hover:bg-slate-800/50 transition-colors">
+                    <td className="p-4 text-slate-400 font-mono text-xs">{pkg.planId}</td>
+                    <td className="p-4 text-white font-bold">{pkg.planName}</td>
+                    <td className="p-4 text-blue-400 font-bold whitespace-nowrap">{pkg.price}</td>
+                    <td className="p-4 text-slate-400 text-sm">{pkg.description}</td>
+                    <td className="p-4">
+                      <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap" onClick={() => handleEnrollClick(pkg.planName, pkg.price, pkg.razorpayId)}>
+                        Buy Now
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="w-full h-px bg-slate-800 mb-20"></div>
+
+          <div className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-blue-500/20 to-violet-500/20 rounded-full border border-blue-500/30 backdrop-blur-xl mb-8">
+            <Crown className="h-5 w-5 text-blue-400" />
+            <span className="text-sm font-bold text-blue-300">Comprehensive Solutions</span>
+          </div>
+
+          <h2 className="font-heading font-black text-5xl md:text-6xl mb-6 text-white" data-testid="text-packages-title">
+            Standard Mentoria <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-pink-400 bg-clip-text text-transparent">Packages</span> 🎓
+          </h2>
+          <p className="text-xl text-slate-400 max-w-3xl mx-auto font-medium">
+            These are the main comprehensive packages.
           </p>
         </div>
 
@@ -248,11 +272,10 @@ export default function PackagesSection() {
               <Button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`font-bold text-base px-8 py-6 transition-all duration-500 border-0 ${
-                  activeTab === tab.key 
-                    ? `bg-gradient-to-r ${tab.gradient} text-white shadow-2xl shadow-blue-500/50 scale-110` 
-                    : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white hover:scale-105'
-                } ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
+                className={`font-bold text-base px-8 py-6 transition-all duration-500 border-0 ${activeTab === tab.key
+                  ? `bg-gradient-to-r ${tab.gradient} text-white shadow-2xl shadow-blue-500/50 scale-110`
+                  : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white hover:scale-105'
+                  } ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
                 style={{ transitionDelay: `${200 + index * 100}ms` }}
                 data-testid={`tab-${tab.key}`}
               >
@@ -262,44 +285,43 @@ export default function PackagesSection() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
-          {currentPackages.map((pkg, index) => (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto mb-20">
+          {currentPackages.map((pkg: any, index: number) => (
             <Card
               key={`${activeTab}-${index}`}
-              className={`p-10 group hover:scale-105 transition-all duration-500 border-0 relative overflow-hidden ${
-                pkg.isPopular 
-                  ? `bg-gradient-to-br ${currentGradient} shadow-2xl shadow-blue-500/50` 
-                  : 'bg-slate-800/50 backdrop-blur-xl'
-              }`}
+              className={`p-10 group hover:scale-105 transition-all duration-500 border-0 relative overflow-hidden ${pkg.planName.includes("Plus+")
+                ? `bg-gradient-to-br ${currentGradient} shadow-2xl shadow-blue-500/50`
+                : 'bg-slate-800/50 backdrop-blur-xl'
+                }`}
               data-testid={`card-package-${activeTab}-${index}`}
             >
-              {pkg.isPopular && (
+              {pkg.planName.includes("Plus+") && (
                 <>
                   <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-bl-full" />
                   <Badge className="absolute -top-4 left-1/2 -translate-x-1/2 bg-yellow-500 text-slate-900 border-0 font-black text-sm px-6 py-2 shadow-2xl z-10" data-testid={`badge-popular-${index}`}>
                     <Crown className="h-4 w-4 mr-1 inline" />
-                    PREMIUM
+                    MOST POPULAR
                   </Badge>
                 </>
               )}
 
               <div className="mb-8 relative z-10">
-                <div className={`text-sm font-bold ${pkg.isPopular ? 'text-white/80' : 'text-blue-400'} mb-3 uppercase tracking-wider flex items-center gap-2`}>
+                <div className={`text-sm font-bold ${pkg.planName.includes("Plus+") ? 'text-white/80' : 'text-blue-400'} mb-3 uppercase tracking-wider flex items-center gap-2`}>
                   <Sparkles className="h-4 w-4" />
-                  {index === 0 ? "Standard" : "Premium"}
+                  {pkg.planName.includes("Plus+") ? "Premium" : "Standard"}
                 </div>
-                <h3 className={`font-heading font-black text-4xl ${pkg.isPopular ? 'text-white' : 'text-white'} mb-4`} data-testid={`text-package-name-${index}`}>
+                <h3 className={`font-heading font-black text-4xl ${pkg.planName.includes("Plus+") ? 'text-white' : 'text-white'} mb-4`} data-testid={`text-package-name-${index}`}>
                   {pkg.planName}
                 </h3>
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-6xl font-heading font-black ${pkg.isPopular ? 'text-white' : 'text-white'}`} data-testid={`text-package-price-${index}`}>
+                  <span className={`text-6xl font-heading font-black ${pkg.planName.includes("Plus+") ? 'text-white' : 'text-white'}`} data-testid={`text-package-price-${index}`}>
                     {pkg.price}
                   </span>
                 </div>
               </div>
 
               <ul className="space-y-4 mb-10">
-                {pkg.features.map((feature, featureIndex) => (
+                {pkg.features && pkg.features.map((feature: any, featureIndex: number) => (
                   <li key={featureIndex} className="flex items-start gap-3" data-testid={`feature-${index}-${featureIndex}`}>
                     <div className={`flex-shrink-0 mt-0.5 p-1.5 rounded-full ${feature.included ? 'bg-emerald-500/20' : 'bg-slate-700'}`}>
                       {feature.included ? (
@@ -308,7 +330,7 @@ export default function PackagesSection() {
                         <X className="h-4 w-4 text-slate-500" />
                       )}
                     </div>
-                    <span className={`text-sm leading-relaxed font-medium ${feature.included ? (pkg.isPopular ? "text-white" : "text-white") : "text-slate-500"}`}>
+                    <span className={`text-sm leading-relaxed font-medium ${feature.included ? (pkg.planName.includes("Plus+") ? "text-white" : "text-white") : "text-slate-500"}`}>
                       {feature.text}
                     </span>
                   </li>
@@ -317,12 +339,11 @@ export default function PackagesSection() {
 
               <Button
                 size="lg"
-                className={`w-full font-black text-lg py-7 transition-all duration-300 border-0 ${
-                  pkg.isPopular 
-                    ? 'bg-white text-slate-900 hover:bg-white/90 shadow-2xl hover:shadow-white/50 hover:scale-105' 
-                    : `bg-gradient-to-r ${currentGradient} text-white hover:scale-105 shadow-2xl shadow-blue-500/50`
-                }`}
-                onClick={() => handleEnrollClick(pkg.planName, pkg.price)}
+                className={`w-full font-black text-lg py-7 transition-all duration-300 border-0 ${pkg.planName.includes("Plus+")
+                  ? 'bg-white text-slate-900 hover:bg-white/90 shadow-2xl hover:shadow-white/50 hover:scale-105'
+                  : `bg-gradient-to-r ${currentGradient} text-white hover:scale-105 shadow-2xl shadow-blue-500/50`
+                  }`}
+                onClick={() => handleEnrollClick(pkg.planName, pkg.price, pkg.razorpayId)}
                 data-testid={`button-buy-${index}`}
               >
                 BUY NOW →
@@ -336,86 +357,32 @@ export default function PackagesSection() {
         </p>
       </div>
 
-      <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
+        <DialogContent className="sm:max-w-md bg-white text-slate-900">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-blue-500" />
-              Complete Your Booking
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <CreditCard className="h-5 w-5 text-blue-600" />
+              Secure Payment
             </DialogTitle>
             <DialogDescription>
               {selectedPackage && (
                 <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="font-semibold text-slate-900">{selectedPackage.name}</p>
-                  <p className="text-sm text-slate-600">{selectedPackage.type}</p>
                   <p className="text-lg font-bold text-blue-600 mt-1">{selectedPackage.price}</p>
+                  <p className="text-sm text-slate-600 mt-2">Proceed comfortably with Razorpay.</p>
                 </div>
               )}
             </DialogDescription>
           </DialogHeader>
-          
-          <form onSubmit={handleBookingSubmit} className="space-y-4 mt-4">
-            <div>
-              <Label htmlFor="booking-name">Full Name *</Label>
-              <Input
-                id="booking-name"
-                placeholder="Enter your full name"
-                value={bookingForm.name}
-                onChange={(e) => setBookingForm({ ...bookingForm, name: e.target.value })}
-                required
-                data-testid="input-booking-name"
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="booking-email">Email Address *</Label>
-              <Input
-                id="booking-email"
-                type="email"
-                placeholder="your.email@example.com"
-                value={bookingForm.email}
-                onChange={(e) => setBookingForm({ ...bookingForm, email: e.target.value })}
-                required
-                data-testid="input-booking-email"
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="booking-phone">Phone Number *</Label>
-              <Input
-                id="booking-phone"
-                type="tel"
-                placeholder="+91 98765 43210"
-                value={bookingForm.phone}
-                onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })}
-                required
-                data-testid="input-booking-phone"
-              />
-            </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsBookingModalOpen(false);
-                  setBookingForm({ name: "", email: "", phone: "" });
-                }}
-                className="flex-1"
-                data-testid="button-booking-cancel"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="flex-1 bg-gradient-to-r from-blue-500 to-violet-500"
-                data-testid="button-booking-submit"
-              >
-                {isSubmitting ? "Submitting..." : "Submit Booking"}
-              </Button>
-            </div>
-          </form>
+          <div className="flex justify-center flex-col items-center pt-2 pb-6 min-h-[150px]">
+            {selectedPackage && selectedPackage.id ? (
+              <RazorpayButton paymentButtonId={selectedPackage.id} />
+            ) : (
+              <p className="text-red-500">Payment button configuration missing for this plan.</p>
+            )}
+            <p className="text-xs text-slate-500 mt-4">Safe & Secure Payment Gateway</p>
+          </div>
         </DialogContent>
       </Dialog>
     </section>
